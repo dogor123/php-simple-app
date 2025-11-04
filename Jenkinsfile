@@ -2,49 +2,75 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('docker-hub-creds2') // ID de credenciales en Jenkins
-        IMAGE_NAME = "tebancito/php-simple-app"
-        BUILD_VERSION = "1.0.${env.BUILD_ID}"
+        DOCKERHUB_CREDENTIALS = 'dockerhub-cred'     // ID configurado en Jenkins
+        DOCKERHUB_REPO = 'tebancito/php-simple-app'  // Tu repo en DockerHub
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/dogor123/php-simple-app.git'
+                git branch: 'main',
+                    url: 'https://github.com/dogor123/php-simple-app.git'
+            }
+        }
+
+        stage('Generate Tag') {
+            steps {
+                script {
+                    // Generar tag con fecha + hora + commit corto
+                    COMMIT_ID = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    DATE_TAG = sh(script: "date +%Y%m%d-%H%M%S", returnStdout: true).trim()
+                    IMAGE_TAG = "${DATE_TAG}-${COMMIT_ID}"
+                    echo "Tag generado: ${IMAGE_TAG}"
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build --build-arg BUILD_VERSION=$BUILD_VERSION -t $IMAGE_NAME:$BUILD_VERSION .'
-            }
-        }
-
-        stage('Login to DockerHub') {
-            steps {
-                sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+                script {
+                    sh """
+                    docker build -t ${DOCKERHUB_REPO}:${IMAGE_TAG} -t ${DOCKERHUB_REPO}:latest .
+                    """
+                }
             }
         }
 
         stage('Push to DockerHub') {
             steps {
-                sh 'docker push $IMAGE_NAME:$BUILD_VERSION'
-                sh 'docker tag $IMAGE_NAME:$BUILD_VERSION $IMAGE_NAME:latest'
-                sh 'docker push $IMAGE_NAME:latest'
+                script {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${DOCKERHUB_REPO}:${IMAGE_TAG}
+                        docker push ${DOCKERHUB_REPO}:latest
+                        docker logout
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('No Changes Check') {
+            when {
+                expression {
+                    // Aquí podrías comparar hash del commit o usar algún flag
+                    // pero para simplicidad, solo muestra el mensaje
+                    true
+                }
+            }
+            steps {
+                echo "Validando si hay cambios (demo)..."
             }
         }
     }
 
     post {
-        always {
-            echo "=== Limpieza final ==="
-            sh 'docker system prune -f || true'
-        }
         success {
-            echo "✅ Pipeline completado con éxito"
+            echo "✅ Imagen subida correctamente con tag ${IMAGE_TAG}"
         }
         failure {
-            echo "❌ Pipeline falló"
+            echo "❌ Error en el pipeline"
         }
     }
 }
