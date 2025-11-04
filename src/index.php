@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>¡Hola PHP desde Docker!</title>
+    <title>y trabajaremos con Tags!</title>
     <style>
         body {
             font-family: Arial, sans-serif;
